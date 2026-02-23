@@ -439,8 +439,8 @@ FLOWS = {
         "text": (
             "🏡 **Homestead Exemption (DR-501)**\n\n"
             "I'll need a few details. Send them in this format:\n\n"
-            "`Name | Address | Parcel ID`\n\n"
-            "Example:\n`Jane Doe | 123 Main St, Orlando, FL 32801 | 01-23-45-6789-00-100`"
+            "`Name ; Address ; Parcel ID`\n\n"
+            "Example:\n`Jane Doe ; 123 Main St, Orlando, FL 32801 ; 01-23-45-6789-00-100`"
         ),
         "buttons": [_back("forms")],
         "expects_input": True,
@@ -452,8 +452,8 @@ FLOWS = {
         "text": (
             "🏗️ **Building Permit Application**\n\n"
             "Send the details in this format:\n\n"
-            "`Owner Name | Address, City, ST ZIP | Description | Valuation`\n\n"
-            "Example:\n`John Smith | 456 Oak Ave, Orlando, FL 32803 | Kitchen remodel | 25000`"
+            "`Owner Name ; Address, City, ST ZIP ; Description ; Valuation`\n\n"
+            "Example:\n`John Smith ; 456 Oak Ave, Orlando, FL 32803 ; Kitchen remodel ; 25000`"
         ),
         "buttons": [_back("forms")],
         "expects_input": True,
@@ -1120,10 +1120,10 @@ def handle_text_input(text: str, context: str = None) -> dict:
 
     # ── Forms: homestead ──────────────────────────────────────────────────
     if context == "forms_homestead":
-        parts = [p.strip() for p in text.split("|")]
+        parts = [p.strip() for p in text.split(";")]
         if len(parts) < 2:
             return {
-                "text": "Please provide at least: `Name | Address`\n\nOptionally: `Name | Address | Parcel ID`",
+                "text": "Please provide at least: `Name ; Address`\n\nOptionally: `Name ; Address ; Parcel ID`",
                 "expects_input": True,
                 "buttons": [_back("forms")],
             }
@@ -1140,10 +1140,10 @@ def handle_text_input(text: str, context: str = None) -> dict:
 
     # ── Forms: building permit ────────────────────────────────────────────
     if context == "forms_building_permit":
-        parts = [p.strip() for p in text.split("|")]
+        parts = [p.strip() for p in text.split(";")]
         if len(parts) < 4:
             return {
-                "text": "Please provide: `Owner Name | Address, City, ST ZIP | Description | Valuation`",
+                "text": "Please provide: `Owner Name ; Address, City, ST ZIP ; Description ; Valuation`",
                 "expects_input": True,
                 "buttons": [_back("forms")],
             }
