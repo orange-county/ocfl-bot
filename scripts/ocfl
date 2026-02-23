@@ -1,0 +1,483 @@
+#!/usr/bin/env python3
+"""
+ocfl - Orange County FL Government Services CLI
+
+Usage:
+    ocfl property <address_or_parcel>
+    ocfl inmate <name>
+    ocfl inmate --bookings
+    ocfl pets [--type TYPE] [--size SIZE] [--ready] [--limit N]
+    ocfl permit <permit_type>
+"""
+
+import argparse
+import json
+import re
+import sys
+from urllib.parse import quote_plus, urlencode
+
+try:
+    import requests
+    from bs4 import BeautifulSoup
+except ImportError:
+    print("Missing dependencies. Run: uv run --with requests --with beautifulsoup4 python scripts/ocfl")
+    sys.exit(1)
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+# Orange County GIS
+OCGIS_BASE = "https://ocgis4.ocfl.net/arcgis/rest/services"
+GEOCODE_URL = f"{OCGIS_BASE}/PUBLIC_SITUS_ADDRESS_LOC/GeocodeServer/findAddressCandidates"
+
+# Property Appraiser
+OCPA_WEB = "https://ocpaweb.ocpafl.org"
+OCPA_MAPS = "https://maps.ocpafl.org"
+OCPA_PORTAL = "https://vgispublic.ocpafl.org"
+
+# Corrections
+BESTJAIL_BASE = "https://netapps.ocfl.net/BestJail"
+BOOKINGS_PDF = f"{BESTJAIL_BASE}/PDF/bookings.pdf"
+
+# Animal Services
+SHELTER_URL = "http://www.orangecountyanimalservicesfl.net/Adopt/AnimalsinShelter.aspx"
+
+HEADERS = {
+    "User-Agent": "ocfl-cli/1.0 (Orange County FL Services CLI)"
+}
+
+
+# =============================================================================
+# Property Functions (with ArcGIS Integration)
+# =============================================================================
+
+def geocode_address(address: str) -> dict:
+    """Geocode an address using Orange County's ArcGIS service"""
+    
+    # Parse address components
+    parts = address.split(',')
+    street = parts[0].strip() if parts else address
+    city = parts[1].strip() if len(parts) > 1 else ""
+    
+    params = {
+        "Street": street,
+        "City": city,
+        "f": "json",
+        "outFields": "*",
+        "maxLocations": 5
+    }
+    
+    try:
+        response = requests.get(GEOCODE_URL, params=params, headers=HEADERS, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("candidates"):
+            best = data["candidates"][0]
+            return {
+                "success": True,
+                "address": best.get("address"),
+                "score": best.get("score"),
+                "location": best.get("location"),
+                "extent": best.get("extent"),
+                "candidates_count": len(data["candidates"])
+            }
+        else:
+            return {"success": False, "error": "No candidates found"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def search_property(query: str) -> dict:
+    """Search for property by address or parcel ID"""
+    
+    # Check if it looks like a parcel ID (numeric, possibly with dashes)
+    clean_query = query.replace("-", "").replace(" ", "")
+    if re.match(r"^\d{12,18}$", clean_query):
+        return get_parcel_by_id(clean_query)
+    else:
+        return search_by_address(query)
+
+
+def get_parcel_by_id(parcel_id: str) -> dict:
+    """Get parcel details by parcel ID"""
+    
+    clean_id = parcel_id.replace("-", "")
+    
+    return {
+        "parcel_id": clean_id,
+        "links": {
+            "property_appraiser": f"{OCPA_WEB}/parcelsearch?parcel={clean_id}",
+            "interactive_map": f"{OCPA_MAPS}/webmapjs/?pins={clean_id}",
+            "street_view": f"{OCPA_MAPS}/streetview/?parcel={clean_id}",
+        },
+        "tip": "Click the Property Appraiser link for owner, value, and tax info."
+    }
+
+
+def search_by_address(address: str) -> dict:
+    """Search property by street address using geocoding"""
+    
+    # First, geocode the address
+    geo_result = geocode_address(address)
+    
+    result = {
+        "query": address,
+        "geocoding": geo_result,
+        "links": {
+            "property_search": f"{OCPA_WEB}/parcelsearch",
+            "gis_hub": "https://ocgis-datahub-ocfl.hub.arcgis.com/",
+        }
+    }
+    
+    if geo_result.get("success"):
+        result["matched_address"] = geo_result.get("address")
+        result["confidence"] = geo_result.get("score")
+        
+        # Add instruction for getting parcel from map
+        result["next_steps"] = [
+            f"Address matched: {geo_result.get('address')} (score: {geo_result.get('score')})",
+            "Visit property_search link to find parcel ID",
+            "Or use the GIS hub for detailed mapping"
+        ]
+    else:
+        result["next_steps"] = [
+            "Address not found in Orange County geocoder",
+            "Visit property_search link to search manually",
+            "Check if address is in a city (Orlando, etc.) vs unincorporated"
+        ]
+    
+    return result
+
+
+# =============================================================================
+# Inmate Functions
+# =============================================================================
+
+def search_inmate(name: str) -> dict:
+    """Search for inmate by name - provides search URL"""
+    
+    # BestJail uses JavaScript for search, so we provide the URL
+    return {
+        "query": name,
+        "search_url": f"{BESTJAIL_BASE}/Home/Inmates",
+        "instructions": [
+            "1. Visit the search URL above",
+            "2. Enter the name in the search box",
+            "3. Results show current inmates only"
+        ],
+        "note": "Data updates every 30 minutes. Released inmates are removed.",
+        "phone": "407-836-3400 (Inmate Records)"
+    }
+
+
+def get_daily_bookings() -> dict:
+    """Get info about daily booking list and attempt to fetch metadata"""
+    
+    result = {
+        "bookings_pdf": BOOKINGS_PDF,
+        "population_stats": f"{BESTJAIL_BASE}/PDF/ethnicity_values.pdf",
+        "first_appearances": f"{BESTJAIL_BASE}/Home/FirstAppearance",
+        "note": "Booking list covers 24-hour period starting at midnight."
+    }
+    
+    # Try to get the PDF size to confirm it's available
+    try:
+        response = requests.head(BOOKINGS_PDF, headers=HEADERS, timeout=5)
+        if response.status_code == 200:
+            size = response.headers.get("Content-Length", "unknown")
+            result["pdf_available"] = True
+            result["pdf_size_bytes"] = size
+        else:
+            result["pdf_available"] = False
+    except:
+        result["pdf_available"] = "unknown"
+    
+    return result
+
+
+# =============================================================================
+# Pet Functions (with Actual Scraping)
+# =============================================================================
+
+def scrape_pets(
+    pet_type: str = None,
+    size: str = None,
+    ready_only: bool = False,
+    limit: int = 20
+) -> dict:
+    """Scrape adoptable pets from Orange County Animal Services"""
+    
+    try:
+        # Build URL with filters
+        url = SHELTER_URL
+        params = {"page": 1, "pagesize": min(limit, 48)}
+        
+        response = requests.get(url, params=params, headers=HEADERS, timeout=15)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        pets = []
+        
+        # Find pet cards - they're in links with animal IDs
+        # Format: [NameID](#popup-1) or [NameIDREADY TO GO HOME](#popup-1)
+        pet_links = soup.find_all('a', href='#popup-1')
+        
+        for link in pet_links:
+            text = link.get_text(strip=True)
+            if not text:
+                continue
+                
+            # Parse name and status
+            ready = "READY TO GO HOME" in text
+            name = text.replace("READY TO GO HOME", "").strip()
+            
+            # Extract animal ID (A######) and location code from end
+            # Format: "A######NameLocationCode" like "A385584WileyWD17"
+            match = re.match(r'^(A\d+)(.+?)([A-Z]+\d+)$', name)
+            if match:
+                animal_id = match.group(1)  # e.g., A385584
+                display_name = match.group(2)  # e.g., Wiley
+                location = match.group(3)  # e.g., WD17
+            else:
+                # Try simpler pattern
+                match2 = re.match(r'^(.+?)([A-Z]+\d+)$', name)
+                if match2:
+                    display_name = match2.group(1)
+                    animal_id = match2.group(2)
+                    location = None
+                else:
+                    display_name = name
+                    animal_id = None
+                    location = None
+            
+            # Apply filters
+            if ready_only and not ready:
+                continue
+            
+            pet = {
+                "name": display_name,
+                "animal_id": animal_id,
+                "location": location if 'location' in dir() else None,
+                "ready_to_adopt": ready
+            }
+            
+            pets.append(pet)
+            
+            if len(pets) >= limit:
+                break
+        
+        # Get summary stats from sidebar
+        stats = {}
+        
+        # Look for filter counts like "Cat (57)" and "Dog (146)"
+        filter_text = soup.get_text()
+        cat_match = re.search(r'Cat\s*\((\d+)\)', filter_text)
+        dog_match = re.search(r'Dog\s*\((\d+)\)', filter_text)
+        ready_match = re.search(r'Ready to Go Home\s*\((\d+)\)', filter_text)
+        
+        if cat_match:
+            stats["cats"] = int(cat_match.group(1))
+        if dog_match:
+            stats["dogs"] = int(dog_match.group(1))
+        if ready_match:
+            stats["ready_to_adopt"] = int(ready_match.group(1))
+        
+        return {
+            "success": True,
+            "pets": pets,
+            "count": len(pets),
+            "stats": stats,
+            "shelter_url": SHELTER_URL,
+            "foster_url": "http://www.ocnetpets.com/GetInvolved/FosterCare.aspx",
+            "contact": "407-836-3111"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "shelter_url": SHELTER_URL,
+            "tip": "Visit the shelter URL directly if scraping fails"
+        }
+
+
+# =============================================================================
+# Permit Functions
+# =============================================================================
+
+PERMIT_INFO = {
+    "fence": {
+        "name": "Residential Fence Permit",
+        "fee": "$38 (+ $40 if code violation)",
+        "review_time": "4 business days",
+        "expires": "180 days from approval",
+        "submit_via": "Fast Track Online (fasttrack.ocfl.net)",
+        "requirements": [
+            "Dimensioned site plan or survey with fence location",
+            "Easement Acknowledgement Form (if in easement)",
+            "PDF named: A100-Siteplan-Fence"
+        ],
+        "height_limits": {
+            "front_yard": "4 feet typical",
+            "side_rear_yard": "6 feet typical"
+        },
+        "materials_allowed": ["wood", "vinyl", "aluminum picket", "chain-link"],
+        "contact": "zoning@ocfl.net | 407-836-3111"
+    },
+    "pool": {
+        "name": "Swimming Pool/Spa Permit",
+        "submit_via": "Fast Track Online (fasttrack.ocfl.net)",
+        "requirements": [
+            "Site plan with pool location and setbacks",
+            "Barrier/fence plan (safety code)",
+            "Equipment location",
+            "Separate electrical permit required"
+        ],
+        "contact": "407-836-5550"
+    },
+    "roof": {
+        "name": "Roofing Permit",
+        "submit_via": "Fast Track Online (fasttrack.ocfl.net)",
+        "requirements": [
+            "Scope of work description",
+            "Contractor license info",
+            "Product specifications"
+        ],
+        "contact": "407-836-5550"
+    },
+    "adu": {
+        "name": "Accessory Dwelling Unit (ADU)",
+        "submit_via": "Fast Track Online (fasttrack.ocfl.net)",
+        "requirements": [
+            "Site plan",
+            "Floor plan",
+            "Elevations",
+            "Impact fee calculations"
+        ],
+        "note": "Vision 2050 updates may affect requirements - verify current rules",
+        "contact": "407-836-5550"
+    },
+    "garage_sale": {
+        "name": "Garage Sale Permit",
+        "fee": "Minimal",
+        "submit_via": "Email to zoning@ocfl.net",
+        "requirements": [
+            "Address",
+            "Date(s) of sale"
+        ],
+        "limits": "Maximum 3 sales per year",
+        "contact": "zoning@ocfl.net | 407-836-3111"
+    },
+    "tree": {
+        "name": "Tree Removal/Timber Harvest Permit",
+        "submit_via": "Email to zoning@ocfl.net",
+        "requirements": [
+            "Site plan with tree locations",
+            "Species identification",
+            "Reason for removal"
+        ],
+        "contact": "zoning@ocfl.net | 407-836-3111"
+    }
+}
+
+
+def get_permit_info(permit_type: str) -> dict:
+    """Get information about a permit type"""
+    
+    key = permit_type.lower().replace(" ", "_").replace("-", "_")
+    
+    if key in PERMIT_INFO:
+        return PERMIT_INFO[key]
+    else:
+        return {
+            "error": f"Unknown permit type: {permit_type}",
+            "available_types": list(PERMIT_INFO.keys()),
+            "more_info": "https://www.orangecountyfl.net/PermitsLicenses/Permits.aspx"
+        }
+
+
+# =============================================================================
+# CLI Interface
+# =============================================================================
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Orange County FL Government Services CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  ocfl property "1321 Apopka Airport Rd, Apopka"
+  ocfl property 292234916802030
+  ocfl inmate "John Smith"
+  ocfl inmate --bookings
+  ocfl pets --ready --limit 10
+  ocfl pets --type dog
+  ocfl permit fence
+  ocfl permit pool
+        """
+    )
+    
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # Property command
+    prop_parser = subparsers.add_parser("property", help="Look up property information")
+    prop_parser.add_argument("query", help="Address or parcel ID")
+    
+    # Inmate command
+    inmate_parser = subparsers.add_parser("inmate", help="Search jail inmates")
+    inmate_parser.add_argument("name", nargs="?", help="Inmate name to search")
+    inmate_parser.add_argument("--bookings", action="store_true", help="Get daily booking list info")
+    
+    # Pets command
+    pets_parser = subparsers.add_parser("pets", help="Search adoptable pets")
+    pets_parser.add_argument("--type", choices=["cat", "dog"], help="Pet type")
+    pets_parser.add_argument("--size", choices=["small", "large"], help="Pet size")
+    pets_parser.add_argument("--ready", action="store_true", help="Only show ready-to-adopt")
+    pets_parser.add_argument("--limit", type=int, default=20, help="Max results (default: 20)")
+    
+    # Permit command
+    permit_parser = subparsers.add_parser("permit", help="Get permit information")
+    permit_parser.add_argument("type", help="Permit type (fence, pool, roof, adu, garage_sale, tree)")
+    
+    args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+    
+    result = None
+    
+    if args.command == "property":
+        result = search_property(args.query)
+    
+    elif args.command == "inmate":
+        if args.bookings:
+            result = get_daily_bookings()
+        elif args.name:
+            result = search_inmate(args.name)
+        else:
+            print("Error: Provide a name or use --bookings")
+            sys.exit(1)
+    
+    elif args.command == "pets":
+        result = scrape_pets(
+            pet_type=args.type,
+            size=args.size,
+            ready_only=args.ready,
+            limit=args.limit
+        )
+    
+    elif args.command == "permit":
+        result = get_permit_info(args.type)
+    
+    # Output result as formatted JSON
+    if result:
+        print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    main()

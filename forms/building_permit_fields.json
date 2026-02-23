@@ -1,0 +1,33 @@
+{
+  "form_id": "building-permit",
+  "name": "Orange County Building Permit Application",
+  "pdf": "building_permit.pdf",
+  "source_url": "https://www.orangecountyfl.net/Portals/0/resource%20library/permits%20-%20licenses/Building%20Permit-CERT.pdf",
+  "field_map": {
+    "--owner-name": "Title Holders Name",
+    "--owner-address": "Title Holders Address",
+    "--owner-city": "Owner City",
+    "--owner-state": "Owner State",
+    "--owner-zip": "Owner Zip Code",
+    "--owner-phone": ["Area Code owner", "Phone 3 digit owner", "Phone 4 digit owner"],
+    "--subdivision": "Subdivision Name",
+    "--section": "Section",
+    "--township": "Township",
+    "--range": "Range",
+    "--block": "Block",
+    "--lot": "Lot",
+    "--tenant": "Tenant Name",
+    "--business": "Name of Business",
+    "--architect": "Architect Name",
+    "--architect-license": "Architect License Number",
+    "--engineer": "Civil Engineer Name",
+    "--engineer-license": "Civil Engineer License Number",
+    "--description": "Nature of Improvements line 1",
+    "--description2": "Nature of Improvements line 2",
+    "--valuation": "Total Job Valuation",
+    "--contractor": "Name of license holder or agent",
+    "--contractor-license": "Contractor license",
+    "--contact-email": "Contact email address",
+    "--job-name": "Job Name"
+  }
+}

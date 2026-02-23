@@ -1,0 +1,65 @@
+# OCFL Skill Configuration
+
+[general]
+name = "Orange County FL"
+version = "0.1.0"
+jurisdiction = "unincorporated Orange County, Florida"
+
+[urls]
+# Main county site
+county = "https://www.orangecountyfl.net"
+
+# Permitting
+fasttrack = "https://fasttrack.ocfl.net"
+fasttrack_videos = "https://fasttrack.ocfl.net/OnlineServices/videos.aspx"
+
+# Property
+property_appraiser = "https://ocpaweb.ocpafl.org"
+property_maps = "https://maps.ocpafl.org"
+gis_hub = "https://ocgis-datahub-ocfl.hub.arcgis.com"
+
+# Tax
+tax_collector = "https://www.octaxcol.com"
+
+# Corrections
+bestjail = "https://netapps.ocfl.net/BestJail"
+bookings_pdf = "https://netapps.ocfl.net/BestJail/PDF/bookings.pdf"
+
+# Animal Services
+animal_services = "http://www.orangecountyanimalservicesfl.net"
+adoptable_pets = "http://www.orangecountyanimalservicesfl.net/Adopt/AnimalsinShelter.aspx"
+
+# Video archives
+video_archive = "http://netapps.ocfl.net/mod"
+
+[contacts]
+building_safety = "407-836-5550"
+zoning = "407-836-3111"
+zoning_email = "zoning@ocfl.net"
+property_appraiser = "407-836-5044"
+tax_collector = "407-434-0312"
+animal_services = "407-836-3111"
+corrections = "407-836-3400"
+gis = "407-836-0066"
+gis_email = "GIS@ocfl.net"
+planning_email = "Planning@ocfl.net"
+
+[permits.fence]
+fee = 38
+violation_surcharge = 40
+review_days = 4
+valid_days = 180
+max_height_front = 4
+max_height_side_rear = 6
+submit_via = "fasttrack"
+
+[permits.garage_sale]
+max_per_year = 3
+submit_via = "email"
+email = "zoning@ocfl.net"
+
+[alerts]
+# Future: webhook endpoints for notifications
+inmate_webhook = ""
+pet_adoption_webhook = ""
+permit_status_webhook = ""

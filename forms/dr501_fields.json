@@ -1,0 +1,30 @@
+{
+  "form_id": "homestead",
+  "name": "DR-501 Homestead Exemption Application",
+  "pdf": "dr501.pdf",
+  "source_url": "https://floridarevenue.com/property/documents/dr501.pdf",
+  "field_map": {
+    "--name": "ApplicantName",
+    "--co-applicant": "CoapplicantSpouseName",
+    "--address": "Homestead address",
+    "--mailing-address": "Mailing address",
+    "--parcel": "Parcel ID or legal description",
+    "--phone": "ApplicantPhone number",
+    "--co-phone": "CoapplicantSpousePhone number",
+    "--ssn": "ApplicantSocial Security",
+    "--co-ssn": "CoapplicantSpouseSocial Security",
+    "--dob": "ApplicantDate of birth",
+    "--co-dob": "CoapplicantSpouseDate of birth",
+    "--deed-type": "Type of deed Date of deed",
+    "--book": "Book",
+    "--page": "Page",
+    "--recorded-date": "Recorded date",
+    "--instrument": "or Instrument number",
+    "--trust-name": "Name of trust on the property deed",
+    "--tax-year": "Tax Year",
+    "--date-acquired": "Imm grat on   or Res dent A en Card  of ownership",
+    "--date-established": "Imm grat on   or Res dent A en Card Date homestead was established",
+    "--previous-homestead": "Previous homestead address",
+    "--relationship": "Coapplicant relationship to Applicant Example Spouse parent sibling"
+  }
+}
